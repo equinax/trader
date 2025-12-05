@@ -10,35 +10,38 @@
 
 ## 快速开始
 
-### 1. 启动服务
+### 方式一：Docker Compose（推荐）
 
 ```bash
+# 克隆项目
+git clone https://github.com/equinax/trader.git
+cd trader
+
 # 启动所有服务
 docker-compose up -d
 
-# 查看日志
-docker-compose logs -f api
+# 等待服务启动后，运行数据库迁移
+docker-compose exec api alembic upgrade head
+
+# 导入示例数据
+docker-compose exec api python scripts/migrate_sqlite.py
+
+# 访问应用
+# 前端: http://localhost:3000
+# API文档: http://localhost:8000/api/docs
 ```
 
-### 2. 迁移数据
+### 方式二：本地开发
+
+#### 1. 准备数据库
 
 ```bash
-# 进入后端容器
-docker-compose exec api bash
-
-# 运行数据迁移 (SQLite -> PostgreSQL)
-python scripts/migrate_sqlite.py
+# 确保 PostgreSQL 和 Redis 已启动
+# 创建数据库
+createdb quantdb
 ```
 
-### 3. 访问应用
-
-- **前端**: http://localhost:3000
-- **API文档**: http://localhost:8000/api/docs
-- **OpenAPI JSON**: http://localhost:8000/api/openapi.json
-
-## 开发
-
-### 后端开发
+#### 2. 启动后端
 
 ```bash
 cd backend
@@ -50,11 +53,24 @@ source .venv/bin/activate
 # 安装依赖
 pip install -e ".[dev]"
 
-# 启动开发服务器
+# 配置环境变量
+cp .env.example .env
+# 编辑 .env 设置数据库连接
+
+# 运行数据库迁移
+alembic upgrade head
+
+# 导入示例数据（内置15只股票）
+python scripts/migrate_sqlite.py
+
+# 或导入完整数据集（如果有）
+# python scripts/migrate_sqlite.py --source /path/to/a_stock_2024.db
+
+# 启动 API 服务
 uvicorn app.main:app --reload
 ```
 
-### 前端开发
+#### 3. 启动前端
 
 ```bash
 cd frontend
@@ -62,29 +78,45 @@ cd frontend
 # 安装依赖
 pnpm install
 
+# 配置环境变量
+cp .env.example .env
+
+# 生成 API 客户端（需要后端运行）
+pnpm run api:generate
+
 # 启动开发服务器
 pnpm dev
-
-# 生成 API 客户端 (需要后端运行)
-pnpm run api:generate
 ```
 
-### 数据库迁移
+### 3. 访问应用
+
+- **前端**: http://localhost:5173 (本地开发) 或 http://localhost:3000 (Docker)
+- **API文档**: http://localhost:8000/api/docs
+- **OpenAPI JSON**: http://localhost:8000/api/openapi.json
+
+## 示例数据
+
+项目内置了精选的示例数据（`backend/data/sample_data.db`），包含：
+
+| 类型 | 股票 |
+|------|------|
+| 主要指数 | 上证综指、沪深300、深证成指、创业板指 |
+| 蓝筹股 | 贵州茅台、中国平安、平安银行、五粮液、宁德时代、比亚迪 |
+| 金融股 | 招商银行、工商银行 |
+| 消费/医药 | 美的集团、恒瑞医药、海康威视 |
+
+共 15 只股票，约 3,600 条日线数据（2024年全年）。
+
+如需完整数据（5,662只股票，136万条记录），请使用外部数据源：
 
 ```bash
-cd backend
-
-# 创建新迁移
-alembic revision --autogenerate -m "description"
-
-# 执行迁移
-alembic upgrade head
+python scripts/migrate_sqlite.py --source /path/to/a_stock_2024.db
 ```
 
 ## 项目结构
 
 ```
-v1/
+trader/
 ├── backend/
 │   ├── app/
 │   │   ├── api/v1/          # API 路由
@@ -92,7 +124,8 @@ v1/
 │   │   ├── services/        # 业务逻辑
 │   │   └── domain/engine/   # Backtrader 集成
 │   ├── workers/             # ARQ 任务
-│   └── scripts/             # 工具脚本
+│   ├── scripts/             # 工具脚本
+│   └── data/                # 示例数据
 ├── frontend/
 │   ├── src/
 │   │   ├── components/      # UI 组件
@@ -107,15 +140,48 @@ v1/
 
 - `POST /api/v1/strategies` - 创建策略
 - `GET /api/v1/strategies` - 策略列表
+- `POST /api/v1/strategies/validate-code` - 验证策略代码
+- `GET /api/v1/strategies/templates/list` - 获取策略模板
 - `POST /api/v1/backtests` - 创建回测任务
 - `GET /api/v1/backtests/{id}/results` - 获取回测结果
 - `GET /api/v1/stocks` - 股票列表
 - `GET /api/v1/stocks/{code}/kline` - K线数据
 
-## 数据源
+## 内置策略模板
 
-- A股日线数据: `/Users/dan/Code/q/trading_data/a_stock_2024.db`
-- 包含 5662 只股票，136 万条日线记录 (2024年全年)
+- **SMA Crossover** - 双均线交叉策略
+- **RSI Strategy** - RSI 超买超卖策略
+- **MACD Strategy** - MACD 金叉死叉策略
+- **Bollinger Bands** - 布林带均值回归策略
+
+## 数据库迁移
+
+```bash
+cd backend
+
+# 创建新迁移
+alembic revision --autogenerate -m "description"
+
+# 执行迁移
+alembic upgrade head
+```
+
+## 环境变量
+
+### 后端 (backend/.env)
+
+```env
+DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/quantdb
+REDIS_URL=redis://localhost:6379/0
+SECRET_KEY=your-secret-key
+DEBUG=true
+```
+
+### 前端 (frontend/.env)
+
+```env
+VITE_API_URL=http://localhost:8000/api
+```
 
 ## License
 

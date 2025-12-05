@@ -59,8 +59,9 @@ htmlcov/
 .tox/
 .nox/
 
-# Database
+# Database (except sample data)
 *.db
+!backend/data/sample_data.db
 *.sqlite3
 
 # Logs
