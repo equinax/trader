@@ -8,15 +8,27 @@ Source: /Users/dan/Code/q/trading_data/a_stock_2024.db
 
 import asyncio
 import sqlite3
-from datetime import datetime
+from datetime import datetime, date
 from decimal import Decimal
 from pathlib import Path
 
 import asyncpg
 
+
+def parse_date(val):
+    """Parse date string to date object."""
+    if val is None or val == "":
+        return None
+    if isinstance(val, date):
+        return val
+    try:
+        return datetime.strptime(str(val), "%Y-%m-%d").date()
+    except:
+        return None
+
 # Configuration
 SQLITE_PATH = Path("/Users/dan/Code/q/trading_data/a_stock_2024.db")
-POSTGRES_URL = "postgresql://quant:quant_dev_password@localhost:5432/quantdb"
+POSTGRES_URL = "postgresql://dan:1234@localhost:5432/quantdb"
 BATCH_SIZE = 10000
 
 
@@ -110,8 +122,8 @@ async def migrate_stock_basic(sqlite_conn: sqlite3.Connection, pg_conn: asyncpg.
         records.append((
             code,
             record.get("code_name"),
-            record.get("ipo_date"),
-            record.get("out_date"),
+            parse_date(record.get("ipo_date")),
+            parse_date(record.get("out_date")),
             record.get("type"),
             record.get("status"),
             exchange,
@@ -123,7 +135,7 @@ async def migrate_stock_basic(sqlite_conn: sqlite3.Connection, pg_conn: asyncpg.
     await pg_conn.executemany(
         """
         INSERT INTO stock_basic (code, code_name, ipo_date, out_date, stock_type, status, exchange, sector, industry)
-        VALUES ($1, $2, $3::date, $4::date, $5, $6, $7, $8, $9)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         ON CONFLICT (code) DO UPDATE SET
             code_name = EXCLUDED.code_name,
             updated_at = CURRENT_TIMESTAMP
@@ -176,7 +188,7 @@ async def migrate_daily_k_data(sqlite_conn: sqlite3.Connection, pg_conn: asyncpg
                     return None
 
             batch.append((
-                record.get("date"),
+                parse_date(record.get("date")),
                 record.get("code"),
                 safe_decimal(record.get("open")),
                 safe_decimal(record.get("high")),
@@ -202,7 +214,7 @@ async def migrate_daily_k_data(sqlite_conn: sqlite3.Connection, pg_conn: asyncpg
                 date, code, open, high, low, close, preclose, volume, amount,
                 turn, trade_status, pct_chg, pe_ttm, pb_mrq, ps_ttm, pcf_ncf_ttm, is_st
             )
-            VALUES ($1::date, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
             ON CONFLICT (code, date) DO NOTHING
             """,
             batch,
@@ -245,7 +257,7 @@ async def migrate_adjust_factor(sqlite_conn: sqlite3.Connection, pg_conn: asyncp
 
         records.append((
             record.get("code"),
-            record.get("dividOperateDate"),
+            parse_date(record.get("dividOperateDate")),
             safe_decimal(record.get("foreAdjustFactor")),
             safe_decimal(record.get("backAdjustFactor")),
             safe_decimal(record.get("adjustFactor")),
@@ -254,7 +266,7 @@ async def migrate_adjust_factor(sqlite_conn: sqlite3.Connection, pg_conn: asyncp
     await pg_conn.executemany(
         """
         INSERT INTO adjust_factor (code, divid_operate_date, fore_adjust_factor, back_adjust_factor, adjust_factor)
-        VALUES ($1, $2::date, $3, $4, $5)
+        VALUES ($1, $2, $3, $4, $5)
         ON CONFLICT (code, divid_operate_date) DO NOTHING
         """,
         records,
